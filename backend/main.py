@@ -52,7 +52,6 @@ def login(username: str = Form(...), password: str = Form(...), db: Session = De
 
 # --- Dummy resume processor ---
 def process_resume(file_path: str) -> dict:
-    # ⚡ Replace with real NLP/Resume parser later
     return extract_data_from_resume(file_path)
 
 
