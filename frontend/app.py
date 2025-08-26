@@ -1,79 +1,76 @@
 import streamlit as st
-import asyncio
-import websockets
-import json
+import requests
 
-# Set the title of the Streamlit app
-st.title("WebSocket Chat App")
+API_URL = "http://127.0.0.1:8000"
 
-# --- Initial Setup and Session State ---
-# Initialize chat history if it doesn't exist in the session state
-# This is a key part of the fix: it ensures the list of messages is persistent
-# across all user interactions and page refreshes.
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+st.set_page_config(page_title="Login System", page_icon="🔐")
 
-# --- Display Chat Messages from History ---
-# Loop through the stored messages and display them in the chat UI
-# This loop ensures that the entire chat history is always redrawn
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+st.title("🔐 FastAPI + Streamlit Login Demo")
 
-# --- Get User Input ---
-# Get input from the user using Streamlit's chat input widget
-if prompt := st.chat_input("What is up?"):
-    # Add the user's message to the chat history immediately
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    
-    # Display the user's message in the chat UI
-    with st.chat_message("user"):
-        st.markdown(prompt)
-        
-    # Use st.status to show a loading indicator.
-    with st.status("Thinking...", expanded=True) as status:
-        # Function to handle the WebSocket communication asynchronously
-        async def chat_with_websocket(prompt):
-            """
-            Connects to the WebSocket, sends the user's prompt, and streams the response.
-            """
-            # Replace with the correct WebSocket URL for your backend server
-            uri = "ws://localhost:8000/ws" 
-            
-            try:
-                # Use an async context manager to connect to the WebSocket
-                async with websockets.connect(uri) as websocket:
-                    # Send the user's message to the server
-                    await websocket.send(prompt)
-                    
-                    # Create a new, empty message for the assistant in the chat history
-                    st.session_state.messages.append({"role": "assistant", "content": ""})
-                    
-                    # Use a placeholder to update the chat message in real-time
-                    with st.chat_message("assistant"):
-                        placeholder = st.empty()
-                        full_response = ""
-                        
-                        # Loop to receive streamed chunks from the server
-                        async for message in websocket:
-                            full_response += message
-                            # Update the placeholder with the streamed content
-                            placeholder.markdown(full_response + "▌") # Add a blinking cursor effect
-                        
-                        # Update the final message content in the session state
-                        st.session_state.messages[-1]["content"] = full_response
-                        # Final update to remove the cursor
-                        placeholder.markdown(full_response)
-            except Exception as e:
-                # Display an error message if the connection fails
-                st.error(f"Error connecting to the WebSocket server: {e}")
-                st.error("Please make sure your FastAPI server is running.")
-        
-        # Run the async WebSocket chat function using asyncio
-        asyncio.run(chat_with_websocket(prompt))
-        
-        # Update the status to show completion and remove the spinner
-        status.update(label="Response received!", state="complete", expanded=False)
-        
-    # The `st.rerun()` call has been removed. Streamlit will automatically handle
-    # the re-rendering of the app now, which correctly preserves the session state.
+menu = ["Home", "Register", "Login", "Upload Resume", "Logout"]
+choice = st.sidebar.selectbox("Menu", menu)
+
+
+if "logged_in_user" not in st.session_state:
+    st.session_state.logged_in_user = None
+
+if choice == "Home":
+    if st.session_state.logged_in_user:
+        st.success(f"Welcome, {st.session_state.logged_in_user}!")
+        if st.button("Logout"):
+            st.session_state.logged_in_user = None
+            st.info("Logged out successfully")
+    else:
+        st.warning("Please login or register")
+
+elif choice == "Register":
+    st.subheader("Create a New Account")
+    with st.form("register_form"):
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        submit = st.form_submit_button("Register")
+    if submit:
+        res = requests.post(f"{API_URL}/register", data={"username": username, "password": password})
+        if res.status_code == 200:
+            st.success("User registered successfully! Please login.")
+        else:
+            st.error(res.json().get("detail", "Error"))
+
+elif choice == "Login":
+    st.subheader("Login to Your Account")
+    with st.form("login_form"):
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        submit = st.form_submit_button("Login")
+    if submit:
+        res = requests.post(f"{API_URL}/login", data={"username": username, "password": password})
+        if res.status_code == 200:
+            st.session_state.logged_in_user = res.json()["username"]
+            st.success(f"Logged in as {st.session_state.logged_in_user}")
+            # Redirect to Upload Resume page
+            # st.session_state["redirect_page"] = "Upload Resume"
+            # st.rerun()
+        else:
+            st.error(res.json().get("detail", "Login failed"))
+
+
+# ---- Upload Resume ----
+elif choice == "Upload Resume":
+    st.subheader("Upload Resume")
+    uploaded_file = st.file_uploader("Choose a resume (PDF/DOCX)", type=["pdf", "docx"])
+    if uploaded_file is not None:
+        if st.button("Upload"):
+            files = {"file": (uploaded_file.name, uploaded_file.getvalue())}
+            data = {"username": st.session_state.logged_in_user}
+            res = requests.post(f"{API_URL}/upload_resume", files=files, data=data)
+            if res.status_code == 200:
+                st.success("Resume uploaded and processed!")
+                st.json(res.json()["extracted_data"])
+            else:
+                st.error(res.json().get("detail", "Upload failed"))
+
+
+# ---- Logout ----
+elif choice == "Logout":
+    st.session_state.logged_in_user = None
+    st.info("Logged out successfully")
