@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, JSON
+from sqlalchemy import Column, Integer, String, ForeignKey, JSON, Text
 from database import Base
 from sqlalchemy.orm import relationship
 
@@ -10,6 +10,8 @@ class User(Base):
     password = Column(String)
 
     resumes = relationship("Resume", back_populates="owner")
+    customizations = relationship("ResumeCustomization", back_populates="user")
+
 
 class Resume(Base):
     __tablename__ = "resumes"
@@ -20,3 +22,19 @@ class Resume(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
 
     owner = relationship("User", back_populates="resumes")
+    customizations = relationship("ResumeCustomization", back_populates="resume")
+
+class ResumeCustomization(Base):
+    __tablename__ = "resume_customizations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_post_text = Column(Text, nullable=False)
+    customized_data = Column(JSON, nullable=False)
+
+    # Foreign Keys
+    resume_id = Column(Integer, ForeignKey("resumes.id"))
+    user_id = Column(Integer, ForeignKey("users.id"))
+
+    # Relationships
+    resume = relationship("Resume", back_populates="customizations")
+    user = relationship("User", back_populates="customizations")

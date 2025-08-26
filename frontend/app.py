@@ -7,7 +7,7 @@ st.set_page_config(page_title="Login System", page_icon="🔐")
 
 st.title("🔐 FastAPI + Streamlit Login Demo")
 
-menu = ["Home", "Register", "Login", "Upload Resume", "Logout"]
+menu = ["Home", "Register", "Login", "Upload Resume", "Customize Resume", "View Custom Resumes", "Logout"]
 choice = st.sidebar.selectbox("Menu", menu)
 
 
@@ -68,6 +68,52 @@ elif choice == "Upload Resume":
                 st.json(res.json()["extracted_data"])
             else:
                 st.error(res.json().get("detail", "Upload failed"))
+
+elif choice == "Customize Resume":
+    st.subheader("Customize Resume with Job Post")
+
+    job_post_text = st.text_area("Paste LinkedIn Job Post Text", height=200)
+
+    if st.button("Generate & Save Customized Resume"):
+        if not st.session_state.logged_in_user:
+            st.error("Please login first.")
+        elif not job_post_text:
+            st.error("Please provide a job post text.")
+        else:
+            res = requests.post(
+                f"{API_URL}/customize_resume",
+                data={"username": st.session_state.logged_in_user, "job_post": job_post_text}
+            )
+
+            if res.status_code == 200:
+                data = res.json()
+                st.success("Customized Resume saved successfully!")
+                st.json(data["customized_resume"])
+            else:
+                st.error(res.json().get("detail", "Error while customizing resume"))
+
+
+elif choice == "View Custom Resumes":
+    st.subheader("Your Customized Resumes")
+
+    if not st.session_state.logged_in_user:
+        st.error("Please login first.")
+    else:
+        res = requests.get(f"{API_URL}/get_customized_resumes", params={"username": st.session_state.logged_in_user})
+
+        if res.status_code == 200:
+            customizations = res.json().get("customizations", [])
+            if not customizations:
+                st.info("No customized resumes found.")
+            else:
+                for idx, c in enumerate(customizations, start=1):
+                    with st.expander(f"Customization #{idx} (ID: {c['id']})"):
+                        st.write("**Job Post Used:**")
+                        st.text_area("Job Post", c["job_post_text"], height=150)
+                        st.write("**Customized Resume JSON:**")
+                        st.json(c["customized_data"])
+        else:
+            st.error(res.json().get("detail", "Error while fetching custom resumes"))
 
 
 # ---- Logout ----

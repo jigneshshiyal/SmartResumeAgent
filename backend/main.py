@@ -1,11 +1,13 @@
 import os
-from fastapi import FastAPI, Depends, HTTPException, Form, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, Form, UploadFile, File, Body
 from sqlalchemy.orm import Session
 from fastapi.middleware.cors import CORSMiddleware
 from database import SessionLocal, engine, Base
-from models import User, Resume
+from models import User, Resume, ResumeCustomization
 from auth import hash_password, verify_password
 from extract_resume_data import extract_data_from_resume
+from change_resume_json import change_resume_json
+
 
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -74,6 +76,58 @@ async def upload_resume(username: str = Form(...), file: UploadFile = File(...),
     db.refresh(resume)
 
     return {"message": "Resume uploaded successfully", "extracted_data": extracted}
+
+@app.post("/customize_resume")
+def customize_resume(username: str = Form(...), job_post: str = Form(...), db: Session = Depends(get_db)):
+    # 1. Find user
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # 2. Get latest resume
+    resume = db.query(Resume).filter(Resume.user_id == user.id).order_by(Resume.id.desc()).first()
+    if not resume:
+        raise HTTPException(status_code=404, detail="No resume found for this user")
+
+    # 3. Prepare prompt
+    updated_json = change_resume_json(resume.extracted_data, job_post)
+
+    customization = ResumeCustomization(
+        job_post_text=job_post,
+        customized_data=updated_json,
+        resume=resume,
+        user=user
+    )
+
+    db.add(customization)
+    db.commit()
+    db.refresh(customization)
+
+    # 5. Return updated JSON
+    return {
+        "message": "Customized resume saved successfully",
+        "customized_resume": updated_json,
+        "customization_id": customization.id
+    }
+
+@app.get("/get_customized_resumes")
+def get_customized_resumes(username: str, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    customizations = db.query(ResumeCustomization).filter(ResumeCustomization.user_id == user.id).all()
+
+    return {
+        "customizations": [
+            {
+                "id": c.id,
+                "job_post_text": c.job_post_text,
+                "customized_data": c.customized_data
+            }
+            for c in customizations
+        ]
+    }
 
 
 if __name__ == "__main__":
