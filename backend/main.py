@@ -1,5 +1,6 @@
 import os
 from fastapi import FastAPI, Depends, HTTPException, Form, UploadFile, File, Body
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from fastapi.middleware.cors import CORSMiddleware
 from database import SessionLocal, engine, Base
@@ -7,6 +8,8 @@ from models import User, Resume, ResumeCustomization
 from auth import hash_password, verify_password
 from extract_resume_data import extract_data_from_resume
 from change_resume_json import change_resume_json
+import tempfile
+from vision_renderer import render_html_from_image_and_json
 
 
 UPLOAD_DIR = "uploads"
@@ -128,6 +131,59 @@ def get_customized_resumes(username: str, db: Session = Depends(get_db)):
             for c in customizations
         ]
     }
+
+
+@app.post("/render_resume_from_image")
+async def render_resume_from_image(
+    username: str = Form(...),
+    source: str = Form("original"),  # "original" or "customized"
+    customization_id: int | None = Form(None),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    try:
+        image_bytes = await file.read()
+        out = render_html_from_image_and_json(
+            db=db,
+            username=username,
+            image_bytes=image_bytes,
+            filename=file.filename,
+            source=source,
+            customization_id=customization_id
+        )
+
+        html_text = out["html"]
+
+        # ---- Convert HTML to PDF ----
+        from vision_renderer import html_to_pdf_bytes
+        pdf_bytes = html_to_pdf_bytes(html_text)
+
+        # Save to tmp file
+        tmpfile = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+        tmpfile.write(pdf_bytes)
+        tmpfile.flush()
+        tmpfile.close()
+
+        return {
+            "message": "Rendered successfully",
+            "html": html_text,
+            "pdf_url": f"/download_pdf/{os.path.basename(tmpfile.name)}",
+            "source": out["source"],
+            "customization_id": out["customization_id"],
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        print(e)
+        raise HTTPException(status_code=500, detail=f"Rendering failed: {e}")
+
+
+@app.get("/download_pdf/{filename}")
+def download_pdf(filename: str):
+    tmp_path = os.path.join(tempfile.gettempdir(), filename)
+    if not os.path.exists(tmp_path):
+        raise HTTPException(status_code=404, detail="PDF not found")
+    return FileResponse(tmp_path, media_type="application/pdf", filename="resume.pdf")
 
 
 if __name__ == "__main__":

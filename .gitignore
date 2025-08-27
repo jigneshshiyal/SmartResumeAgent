@@ -2,3 +2,4 @@
 .env
 /uploads/
 /backend/__pycache__/
+database.db
