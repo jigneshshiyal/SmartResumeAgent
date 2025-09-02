@@ -19,8 +19,8 @@ A full-stack project for **resume extraction and customization** using FastAPI, 
 
 ### 1. Clone Repository
 ```bash
-git clone https://github.com/your-username/resume-customizer.git
-cd resume-customizer
+git clone https://github.com/jigneshshiyal/SmartResumeAgent.git
+cd SmartResumeAgent
 ````
 
 ### 2. Create Virtual Environment
